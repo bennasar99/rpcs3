@@ -219,7 +219,17 @@ s32 sys_spu_thread_send_event(spu_thread& spu, u8 spup, u32 data0, u32 data1)
 	}
 
 	spu.set_ch_value(SPU_WrOutMbox, data1);
-	spu.set_ch_value(SPU_WrOutIntrMbox, (spup << 24) | (data0 & 0x00FFFFFF));
+
+	// Fix for BO2 split-screen hang (see AGENTS.md): when the send is aborted (EAGAIN
+	// path in spu_thread::set_ch_value(SPU_WrOutIntrMbox)), the mailboxes are restored
+	// and NO In_Mbox completion will ever be written. The SPURS kernel has already
+	// executed past the WRCH instruction, so blocking on SPU_RdInMbox here would hang
+	// forever. Return EBUSY instead so the kernel's retry loop re-sends.
+	if (!spu.set_ch_value(SPU_WrOutIntrMbox, (spup << 24) | (data0 & 0x00FFFFFF)))
+	{
+		return CELL_EBUSY;
+	}
+
 	return static_cast<u32>(spu.get_ch_value(SPU_RdInMbox));
 }
 
